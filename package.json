@@ -1,0 +1,26 @@
+{
+  "name": "coder",
+  "version": "1.0.0",
+  "main": "index.js",
+  "bin": {
+    "coder": "./dist/main.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@octokit/rest": "^21.1.1",
+    "@types/prompts": "^2.4.9",
+    "prompts": "^2.4.2",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/yargs": "^17.0.33"
+  }
+}
