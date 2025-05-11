@@ -1,7 +1,7 @@
 {
   "name": "coder",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "main.js",
   "tsup": {
     "entry": [
       "src/main.ts"
