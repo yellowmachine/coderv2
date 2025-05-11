@@ -4,14 +4,17 @@
   "main": "main.js",
   "tsup": {
     "entry": [
-      "src/main.ts"
+      "src/main.ts",
+      "src/match.ts"
     ],
     "splitting": false,
     "sourcemap": true,
     "clean": true
   },
   "scripts": {
-    "build": "tsup"
+    "build": "tsup",
+    "start": "node dist/main.js",
+    "match": "node dist/match.js"
   },
   "bin": {
     "coder": "./dist/main.js"
