@@ -4,11 +4,16 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import prompts from 'prompts';
 import { execSync } from 'child_process';
-import { Octokit } from '@octokit/rest';
+//import { Octokit } from '@octokit/rest';
+import { createTempEnv, findAvailablePort } from './utils';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 // Configuración de GitHub
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const octokit = GITHUB_TOKEN ? new Octokit({ auth: GITHUB_TOKEN }) : null;
+//const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+//const octokit = GITHUB_TOKEN ? new Octokit({ auth: GITHUB_TOKEN }) : null;
 
 // ===== FUNCIONES AUXILIARES =====
 
@@ -97,10 +102,33 @@ async function deleteCommand(containerArg?: string) {
   execSync(`docker rm -f ${container}`, { stdio: 'inherit' });
 }
 
+async function runCommand(runtime: string) {
+  
+  const {path, port} = await createTempEnv(runtime);
+  try {
+    // Ejecuta docker compose up -d en el directorio temporal
+    const { stdout, stderr } = await execAsync('docker compose up -d', { cwd: path });
+    if (stdout) console.log(stdout);
+    if (stderr) console.error(stderr);
+    console.log(`http://localhost:${port}`);
+  } catch (error) {
+    console.error('Error al ejecutar docker compose:', error);
+    throw error;
+  }
+}
+
+
 // ===== YARGS INTEGRACIÓN =====
 
 yargs(hideBin(process.argv))
   .scriptName('coder')
+  .command('run [runtime]', 'Lanza un runtime', (yargs) =>
+    yargs.positional('runtime', {
+      type: 'string',
+      describe: 'Ejemplo: node:18',
+    }), async argv => {
+    await runCommand(argv.runtime);
+  })
   .command('create [repo]', 'Crea entorno desde repo', (yargs) =>
     yargs.positional('repo', {
       type: 'string',

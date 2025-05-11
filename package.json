@@ -2,11 +2,19 @@
   "name": "coder",
   "version": "1.0.0",
   "main": "index.js",
-  "bin": {
-    "coder": "./dist/main.js"
+  "tsup": {
+    "entry": [
+      "src/main.ts"
+    ],
+    "splitting": false,
+    "sourcemap": true,
+    "clean": true
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsup"
+  },
+  "bin": {
+    "coder": "./dist/main.js"
   },
   "keywords": [],
   "author": "",
@@ -15,6 +23,7 @@
   "dependencies": {
     "@octokit/rest": "^21.1.1",
     "@types/prompts": "^2.4.9",
+    "detect-port": "^2.1.0",
     "prompts": "^2.4.2",
     "tsup": "^8.4.0",
     "typescript": "^5.8.3",
