@@ -1,12 +1,12 @@
 ARG BASE
 ARG VERSION
-FROM ${BASE}:${VERSION}-alpine
+FROM ${BASE}:${VERSION}
 
-# Instala dependencias necesarias (equivalentes a apt-get en Alpine)
-RUN apk add --no-cache git curl python3 make g++
+# Instala dependencias necesarias
+RUN apt-get update && apt-get install -y git curl python3 make g++
 
-# Crea usuario no root (en Alpine se usa adduser -D)
-RUN adduser -D coder
+# Crea usuario no root
+RUN useradd -m coder
 
 # Crea el directorio del proyecto y ajusta permisos
 RUN mkdir -p /home/coder/project && chown -R coder:coder /home/coder/project
@@ -17,7 +17,7 @@ WORKDIR /home/coder/project
 USER coder
 
 # Instala code-server localmente en node_modules
-RUN npm install --unsafe-perm code-server
+RUN npm install code-server
 
 # Expone el puerto por defecto de code-server
 EXPOSE 8080

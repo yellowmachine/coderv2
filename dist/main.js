@@ -209,10 +209,11 @@ async function deleteCommand(containerArg) {
   }
 }
 async function stopCommand(containerArg) {
-  const path4 = containerArg || await promptContainer("detener");
-  if (!path4) return;
+  let _path = containerArg || await promptContainer("detener");
+  if (!_path) return;
+  _path = import_path.default.join(process.cwd(), "tmp", _path);
   return new Promise((resolve, reject) => {
-    const child = (0, import_child_process.spawn)("docker", ["compose", "down"], { cwd: path4, stdio: "inherit" });
+    const child = (0, import_child_process.spawn)("docker", ["compose", "down"], { cwd: _path, stdio: "inherit" });
     child.on("close", (code) => {
       if (code === 0) {
         console.log(`container parado`);
@@ -297,7 +298,7 @@ async function addAlias(name, value) {
   type: "string",
   describe: "Container"
 }), async (argv) => {
-  await runCommand(argv.container);
+  await stopCommand(argv.container);
 }).command("open [container]", "Abre un contenedor existente", (yargs2) => yargs2.positional("container", {
   type: "string",
   describe: "Container"

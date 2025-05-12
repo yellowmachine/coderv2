@@ -108,11 +108,13 @@ async function deleteCommand(containerArg?: string) {
 
 
 export async function stopCommand(containerArg?: string) {
-  const path = containerArg || await promptContainer('detener');
-  if (!path) return;
+  let _path = containerArg || await promptContainer('detener');
+  if (!_path) return;
+
+  _path = path.join(process.cwd(), 'tmp', _path);
 
   return new Promise<void>((resolve, reject) => {
-    const child = spawn('docker', ['compose', 'down'], { cwd: path, stdio: 'inherit' });
+    const child = spawn('docker', ['compose', 'down'], { cwd: _path, stdio: 'inherit' });
 
     child.on('close', (code) => {
       if (code === 0) {
@@ -223,7 +225,7 @@ yargs(hideBin(process.argv))
       type: 'string',
       describe: 'Container',
     }), async argv => {
-    await runCommand(argv.container);
+    await stopCommand(argv.container);
   })
   .command('open [container]', 'Abre un contenedor existente', (yargs) =>
     yargs.positional('container', {
