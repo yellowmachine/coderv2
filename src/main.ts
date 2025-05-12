@@ -9,6 +9,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
+import { initCommand } from './init';
 
 
 const execAsync = promisify(exec);
@@ -50,12 +51,12 @@ async function openCommand(containerArg?: string) {
   if (!container) return;
   
   const port = await findAvailablePort();
-  const envPath = path.join(process.cwd(), 'tmp', container, '.env');
+  const envPath = path.join(process.env.CODER_HOME!, 'tmp', container, '.env');
 
   execSync(`sed -i 's/^PORT=.*/PORT=${port}/' "${envPath}"`);
   
   return new Promise<void>((resolve, reject) => {
-    const tmpPath = path.join(process.cwd(), 'tmp', container);
+    const tmpPath = path.join(process.env.CODER_HOME!, 'tmp', container);
     const child = spawn('docker', ['compose', 'start'], { cwd: tmpPath, stdio: 'inherit' });
 
     child.on('close', (code) => {
@@ -78,7 +79,7 @@ async function deleteCommand(containerArg?: string) {
   const container = containerArg || await promptContainer('eliminar');
   if (!container) return;
 
-  const tmpPath = path.join(process.cwd(), 'tmp', container);
+  const tmpPath = path.join(process.env.CODER_HOME!, 'tmp', container);
 
   // Ejecutar docker compose down -v en la carpeta del entorno
   await new Promise<void>((resolve, reject) => {
@@ -112,7 +113,7 @@ export async function stopCommand(containerArg?: string) {
   let _path = containerArg || await promptContainer('detener');
   if (!_path) return;
 
-  _path = path.join(process.cwd(), 'tmp', _path);
+  _path = path.join(process.env.CODER_HOME!, 'tmp', _path);
 
   return new Promise<void>((resolve, reject) => {
     const child = spawn('docker', ['compose', 'stop'], { cwd: _path, stdio: 'inherit' });
@@ -169,7 +170,7 @@ async function runCommand(runtime: string) {
   });
 }
 
-const ALIAS_FILE = path.join(process.cwd(), 'alias.json');
+const ALIAS_FILE = path.join(process.env.CODER_HOME!, 'alias.json');
 
 async function addAlias(name: string, value: string) {
   let aliases: Record<string, string> = {};
@@ -196,6 +197,14 @@ async function addAlias(name: string, value: string) {
 
 yargs(hideBin(process.argv))
   .scriptName('coder')
+  .command(
+    'init',
+    'Inicializa el entorno de coder en CODER_HOME',
+    () => {},
+    async () => {
+      await initCommand();
+    }
+  )
   .command(
     'alias <name> <value>',
     'Crea un alias',

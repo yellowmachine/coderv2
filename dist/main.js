@@ -76,7 +76,7 @@ function scanRoutes(baseDir, prefix = "") {
 function matchRoute(input) {
   const [route, queryString] = input.split("?");
   const params = new URLSearchParams(queryString);
-  const envRoutes = scanRoutes(path.join(process.cwd(), "runtime"));
+  const envRoutes = scanRoutes(path.join(process.env.CODER_HOME, "runtime"));
   const routes = [...envRoutes];
   for (const r of routes) {
     const m = route.match(r.pattern);
@@ -100,7 +100,7 @@ function matchRoute(input) {
 var fs2 = require("fs");
 var path2 = require("path");
 var { detect } = require("detect-port");
-var BASE_DIR = process.cwd();
+var BASE_DIR = process.env.CODER_HOME;
 var RUNTIME_DIR = path2.join(BASE_DIR, "runtime");
 var SAMPLES_DIR = path2.join(BASE_DIR, "samples");
 var TMP_DIR = path2.join(BASE_DIR, "tmp");
@@ -145,8 +145,69 @@ async function findAvailablePort(startPort = 8080) {
 // src/main.ts
 var import_child_process2 = require("child_process");
 var import_util = require("util");
+var import_promises2 = __toESM(require("fs/promises"));
+var import_path2 = __toESM(require("path"));
+
+// src/init.ts
 var import_promises = __toESM(require("fs/promises"));
 var import_path = __toESM(require("path"));
+async function initCommand() {
+  const base = process.env.CODER_HOME;
+  if (!base) {
+    console.error(`
+  [ERROR] La variable de entorno CODER_HOME no est\xE1 definida.
+  
+  Por favor, def\xEDnela antes de continuar. Ejemplo:
+    export CODER_HOME=~/coder_home
+  
+  Puedes a\xF1adir esta l\xEDnea a tu .bashrc, .zshrc o archivo de configuraci\xF3n de tu terminal.
+  `);
+    process.exit(1);
+  }
+  try {
+    await import_promises.default.mkdir(base, { recursive: true });
+  } catch (err) {
+    console.error(`[ERROR] No se pudo crear el directorio base: ${base}`);
+    process.exit(1);
+  }
+  try {
+    await import_promises.default.mkdir(import_path.default.join(base, "tmp"), { recursive: true });
+  } catch (err) {
+    console.error(`[ERROR] No se pudo crear el directorio tmp: ${import_path.default.join(base, "tmp")}`);
+    process.exit(1);
+  }
+  const directories = [
+    "runtime",
+    "samples"
+  ];
+  for (const dir of directories) {
+    const source = import_path.default.resolve(dir);
+    const destination = import_path.default.join(process.env.CODER_HOME, dir);
+    try {
+      await import_promises.default.access(source);
+      await copyDir(source, destination);
+      console.log(`Copiado: ${dir} \u2192 ${destination}`);
+    } catch (err) {
+      console.warn(`[ADVERTENCIA] El directorio fuente "${dir}" no existe y no se ha copiado.`);
+    }
+  }
+  console.log("\n\xA1Entorno inicializado correctamente en", base, "!");
+}
+async function copyDir(src, dest) {
+  await import_promises.default.mkdir(dest, { recursive: true });
+  const entries = await import_promises.default.readdir(src, { withFileTypes: true });
+  for (let entry of entries) {
+    const srcPath = import_path.default.join(src, entry.name);
+    const destPath = import_path.default.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await copyDir(srcPath, destPath);
+    } else {
+      await import_promises.default.copyFile(srcPath, destPath);
+    }
+  }
+}
+
+// src/main.ts
 var execAsync = (0, import_util.promisify)(import_child_process2.exec);
 async function promptContainer(action = "abrir") {
   const containers = (0, import_child_process.execSync)('docker ps -a --format "{{.Names}}"').toString().split("\n").filter(Boolean);
@@ -166,10 +227,10 @@ async function openCommand(containerArg) {
   const container = containerArg || await promptContainer("abrir");
   if (!container) return;
   const port = await findAvailablePort();
-  const envPath = import_path.default.join(process.cwd(), "tmp", container, ".env");
+  const envPath = import_path2.default.join(process.env.CODER_HOME, "tmp", container, ".env");
   (0, import_child_process.execSync)(`sed -i 's/^PORT=.*/PORT=${port}/' "${envPath}"`);
   return new Promise((resolve, reject) => {
-    const tmpPath = import_path.default.join(process.cwd(), "tmp", container);
+    const tmpPath = import_path2.default.join(process.env.CODER_HOME, "tmp", container);
     const child = (0, import_child_process.spawn)("docker", ["compose", "start"], { cwd: tmpPath, stdio: "inherit" });
     child.on("close", (code) => {
       if (code === 0) {
@@ -187,7 +248,7 @@ async function openCommand(containerArg) {
 async function deleteCommand(containerArg) {
   const container = containerArg || await promptContainer("eliminar");
   if (!container) return;
-  const tmpPath = import_path.default.join(process.cwd(), "tmp", container);
+  const tmpPath = import_path2.default.join(process.env.CODER_HOME, "tmp", container);
   await new Promise((resolve, reject) => {
     const child = (0, import_child_process.spawn)("docker", ["compose", "down", "-v"], { cwd: tmpPath, stdio: "inherit" });
     child.on("close", (code) => {
@@ -203,7 +264,7 @@ async function deleteCommand(containerArg) {
   });
   console.log(`Borrando carpeta temporal: ${tmpPath}`);
   try {
-    await import_promises.default.rm(tmpPath, { recursive: true, force: true });
+    await import_promises2.default.rm(tmpPath, { recursive: true, force: true });
     console.log(`Carpeta temporal eliminada: ${tmpPath}`);
   } catch (err) {
     console.warn(`No se pudo borrar la carpeta temporal (${tmpPath}):`, err.message);
@@ -212,7 +273,7 @@ async function deleteCommand(containerArg) {
 async function stopCommand(containerArg) {
   let _path = containerArg || await promptContainer("detener");
   if (!_path) return;
-  _path = import_path.default.join(process.cwd(), "tmp", _path);
+  _path = import_path2.default.join(process.env.CODER_HOME, "tmp", _path);
   return new Promise((resolve, reject) => {
     const child = (0, import_child_process.spawn)("docker", ["compose", "stop"], { cwd: _path, stdio: "inherit" });
     child.on("close", (code) => {
@@ -231,7 +292,7 @@ async function stopCommand(containerArg) {
 }
 async function resolveAliasOrRuntime(runtime) {
   try {
-    const data = await import_promises.default.readFile(ALIAS_FILE, "utf8");
+    const data = await import_promises2.default.readFile(ALIAS_FILE, "utf8");
     const aliases = JSON.parse(data);
     return aliases[runtime] ?? runtime;
   } catch (e) {
@@ -241,9 +302,9 @@ async function resolveAliasOrRuntime(runtime) {
 }
 async function runCommand(runtime) {
   const resolvedRuntime = await resolveAliasOrRuntime(runtime);
-  const { path: path4, port } = await createTempEnv(resolvedRuntime);
+  const { path: path5, port } = await createTempEnv(resolvedRuntime);
   return new Promise((resolve, reject) => {
-    const child = (0, import_child_process.spawn)("docker", ["compose", "up", "-d"], { cwd: path4, stdio: "inherit" });
+    const child = (0, import_child_process.spawn)("docker", ["compose", "up", "-d"], { cwd: path5, stdio: "inherit" });
     child.on("close", (code) => {
       if (code === 0) {
         console.log(`http://localhost:${port}`);
@@ -258,12 +319,12 @@ async function runCommand(runtime) {
     });
   });
 }
-var ALIAS_FILE = import_path.default.join(process.cwd(), "alias.json");
+var ALIAS_FILE = import_path2.default.join(process.env.CODER_HOME, "alias.json");
 async function addAlias(name, value) {
   let aliases = {};
   try {
-    await import_promises.default.access(ALIAS_FILE);
-    const data = await import_promises.default.readFile(ALIAS_FILE, "utf8");
+    await import_promises2.default.access(ALIAS_FILE);
+    const data = await import_promises2.default.readFile(ALIAS_FILE, "utf8");
     aliases = JSON.parse(data);
   } catch (e) {
     if (e.code !== "ENOENT") {
@@ -272,10 +333,18 @@ async function addAlias(name, value) {
     }
   }
   aliases[name] = value;
-  await import_promises.default.writeFile(ALIAS_FILE, JSON.stringify(aliases, null, 2));
+  await import_promises2.default.writeFile(ALIAS_FILE, JSON.stringify(aliases, null, 2));
   console.log(`Alias a\xF1adido: ${name} \u2192 ${value}`);
 }
 (0, import_yargs.default)((0, import_helpers.hideBin)(process.argv)).scriptName("coder").command(
+  "init",
+  "Inicializa el entorno de coder en CODER_HOME",
+  () => {
+  },
+  async () => {
+    await initCommand();
+  }
+).command(
   "alias <name> <value>",
   "Crea un alias",
   (yargs2) => {

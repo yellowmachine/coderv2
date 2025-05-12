@@ -5,8 +5,7 @@ const path = require('path');
 const {detect} = require('detect-port');
 
 // === Configuración de rutas ===
-//const BASE_DIR = path.resolve(__dirname);
-const BASE_DIR = process.cwd();
+const BASE_DIR = process.env.CODER_HOME!;
 
 const RUNTIME_DIR = path.join(BASE_DIR, 'runtime');
 const SAMPLES_DIR = path.join(BASE_DIR, 'samples');

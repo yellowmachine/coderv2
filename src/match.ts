@@ -50,8 +50,7 @@ export function matchRoute(input: string) {
     const [route, queryString] = input.split('?');
     const params = new URLSearchParams(queryString);
     
-    const envRoutes = scanRoutes(path.join(process.cwd(), 'runtime'));
-    //const customRoutes = scanRoutes(path.join(process.cwd(), 'custom'));
+    const envRoutes = scanRoutes(path.join(process.env.CODER_HOME!, 'runtime'));
     const routes = [...envRoutes];
   
     for (const r of routes) {
