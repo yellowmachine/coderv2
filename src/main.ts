@@ -3,19 +3,15 @@
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import prompts from 'prompts';
-import { execSync } from 'child_process';
-//import { Octokit } from '@octokit/rest';
+import { execSync, spawn } from 'child_process';
 import { createTempEnv, findAvailablePort } from './utils';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import fs from 'fs/promises';
+import path from 'path';
+
 
 const execAsync = promisify(exec);
-
-// Configuración de GitHub
-//const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-//const octokit = GITHUB_TOKEN ? new Octokit({ auth: GITHUB_TOKEN }) : null;
-
-// ===== FUNCIONES AUXILIARES =====
 
 async function promptCommand() {
   const res = await prompts({
@@ -41,26 +37,6 @@ async function promptRepo() {
   return res.repo;
 }
 
-async function fetchUserRepos() {
-  if (!octokit) throw new Error('GITHUB_TOKEN no definido');
-  const repos = await octokit.paginate(octokit.repos.listForAuthenticatedUser, { per_page: 100 });
-  return repos.map(repo => ({
-    title: repo.full_name + (repo.private ? ' (privado)' : ''),
-    value: repo.ssh_url
-  }));
-}
-
-async function promptUserRepo(): Promise<string> {
-  const repos = await fetchUserRepos();
-  const res = await prompts({
-    type: 'autocomplete',
-    name: 'repo',
-    message: 'Selecciona un repo:',
-    choices: repos
-  });
-  return res.repo;
-}
-
 async function promptContainer(action = 'abrir') {
   const containers = execSync('docker ps -a --format "{{.Names}}"').toString().split('\n').filter(Boolean);
   if (containers.length === 0) {
@@ -78,18 +54,6 @@ async function promptContainer(action = 'abrir') {
 
 // ===== COMANDOS =====
 
-async function createCommand(repoArg?: string) {
-  const repo = repoArg || await promptRepo();
-  if (!repo) return;
-  execSync(`npx degit ${repo}`, { stdio: 'inherit' });
-}
-
-async function cloneCommand() {
-  const repo = await promptUserRepo();
-  if (!repo) return;
-  execSync(`git clone ${repo}`, { stdio: 'inherit' });
-}
-
 async function openCommand(containerArg?: string) {
   const container = containerArg || await promptContainer('abrir');
   if (!container) return;
@@ -100,23 +64,40 @@ async function deleteCommand(containerArg?: string) {
   const container = containerArg || await promptContainer('eliminar');
   if (!container) return;
   execSync(`docker rm -f ${container}`, { stdio: 'inherit' });
-}
 
-async function runCommand(runtime: string) {
-  
-  const {path, port} = await createTempEnv(runtime);
+  const tmpPath = path.join(process.cwd(), 'tmp', container);
+
+  console.log(`Borrando carpeta temporal: ${tmpPath}`);
+
   try {
-    // Ejecuta docker compose up -d en el directorio temporal
-    const { stdout, stderr } = await execAsync('docker compose up -d', { cwd: path });
-    if (stdout) console.log(stdout);
-    if (stderr) console.error(stderr);
-    console.log(`http://localhost:${port}`);
-  } catch (error) {
-    console.error('Error al ejecutar docker compose:', error);
-    throw error;
+    await fs.rm(tmpPath, { recursive: true, force: true });
+    console.log(`Carpeta temporal eliminada: ${tmpPath}`);
+  } catch (err) {
+    console.warn(`No se pudo borrar la carpeta temporal (${tmpPath}):`, err.message);
   }
 }
 
+async function runCommand(runtime: string) {
+  const { path, port } = await createTempEnv(runtime);
+
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn('docker', ['compose', 'up', '-d'], { cwd: path, stdio: 'inherit' });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        console.log(`http://localhost:${port}`);
+        resolve();
+      } else {
+        reject(new Error(`docker compose exited with code ${code}`));
+      }
+    });
+
+    child.on('error', (err) => {
+      console.error('Error al ejecutar docker compose:', err);
+      reject(err);
+    });
+  });
+}
 
 // ===== YARGS INTEGRACIÓN =====
 
@@ -128,16 +109,6 @@ yargs(hideBin(process.argv))
       describe: 'Ejemplo: node:18',
     }), async argv => {
     await runCommand(argv.runtime);
-  })
-  .command('create [repo]', 'Crea entorno desde repo', (yargs) =>
-    yargs.positional('repo', {
-      type: 'string',
-      describe: 'Usuario/repo de GitHub',
-    }), async argv => {
-    await createCommand(argv.repo);
-  })
-  .command('clone', 'Clona un repo tuyo', {}, async () => {
-    await cloneCommand();
   })
   .command('open [container]', 'Abre un contenedor existente', (yargs) =>
     yargs.positional('container', {

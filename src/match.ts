@@ -45,49 +45,53 @@ function scanRoutes(baseDir: string, prefix: string = ''): RoutePattern[] {
   return routes;
 }
 
-// Ejemplo de uso:
-const envRoutes = scanRoutes(path.join(process.cwd(), 'runtime'));
-//const customRoutes = scanRoutes(path.join(process.cwd(), 'custom'));
-const allRoutes = [...envRoutes];
-
 // Matching:
-function matchRoute(input: string, routes: RoutePattern[]) {
-  for (const route of routes) {
-    const m = input.match(route.pattern);
-    if (m) {
-      const params: Record<string, string> = {};
-      route.variables.forEach((v, i) => {
-        params[v] = m[i + 1];
-      });
-      return {
-        ...route,
-        params
-      };
+export function matchRoute(input: string) {
+    const [route, queryString] = input.split('?');
+    const params = new URLSearchParams(queryString);
+    
+    const envRoutes = scanRoutes(path.join(process.cwd(), 'runtime'));
+    //const customRoutes = scanRoutes(path.join(process.cwd(), 'custom'));
+    const routes = [...envRoutes];
+  
+    for (const r of routes) {
+        const m = route.match(r.pattern);
+        if (m) {
+            const p: Record<string, string> = {};
+            r.variables.forEach((v, i) => {
+                p[v] = m[i + 1];
+            });
+            return {
+                ...r,
+                variables: p,
+                variableNames: r.variables,
+                params
+            };
+        }
     }
-  }
-  return null;
+    return null;
 }
 
 //const input = 'node/18/alpine?ssh=true&package=yarn';
-const input = 'my/node:18';
+//const input = 'my/node:18';
 
-const [route, queryString] = input.split('?');
-const params = new URLSearchParams(queryString);
+//const [route, queryString] = input.split('?');
+//const params = new URLSearchParams(queryString);
 
-console.log('all routes', allRoutes);
-console.log('Ruta:', route); // node/18/alpine
-console.log('ssh:', params.get('ssh')); // 'true'
-console.log('package:', params.get('package')); // 'yarn'
+//console.log('Ruta:', route); // node/18/alpine
+//console.log('ssh:', params.get('ssh')); // 'true'
+//console.log('package:', params.get('package')); // 'yarn'
 
 
 // Ejemplo:
 //const input = 'node/18/alpine';
-const match = matchRoute(route, allRoutes);
-if (match) {
-  console.log('Dockerfile:', match.dockerfilePath);
-  console.log('Variables:', match.params);
-} else {
-  console.log('No match');
-}
+//const match = matchRoute(input);
+//if (match) {
+//    console.log(match)
+  //console.log('Dockerfile:', match.dockerfilePath);
+  //console.log('Variables:', match.params);
+//} else {
+//  console.log('No match');
+//}
 
 

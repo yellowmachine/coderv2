@@ -29,45 +29,97 @@ var import_helpers = require("yargs/helpers");
 var import_prompts = __toESM(require("prompts"));
 var import_child_process = require("child_process");
 
+// src/match.ts
+var fs = __toESM(require("fs"));
+var path = __toESM(require("path"));
+function scanRoutes(baseDir, prefix = "") {
+  const routes = [];
+  function walk(currentPath, parts) {
+    const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        walk(path.join(currentPath, entry.name), [...parts, entry.name]);
+      } else if (entry.isFile() && entry.name === "Dockerfile") {
+        const template = parts.join("/");
+        const variables = [];
+        const patternStr = parts.map((part) => {
+          const match = part.match(/^\[(.+)\]$/);
+          if (match) {
+            variables.push(match[1]);
+            return "([^/]+)";
+          }
+          return part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        }).join("/");
+        const pattern = new RegExp(`^${patternStr}$`);
+        routes.push({
+          pattern,
+          variables,
+          dockerfilePath: path.join(currentPath, entry.name),
+          template
+        });
+      }
+    }
+  }
+  walk(baseDir, prefix ? [prefix] : []);
+  return routes;
+}
+function matchRoute(input) {
+  const [route, queryString] = input.split("?");
+  const params = new URLSearchParams(queryString);
+  const envRoutes = scanRoutes(path.join(process.cwd(), "runtime"));
+  const routes = [...envRoutes];
+  for (const r of routes) {
+    const m = route.match(r.pattern);
+    if (m) {
+      const p = {};
+      r.variables.forEach((v, i) => {
+        p[v] = m[i + 1];
+      });
+      return {
+        ...r,
+        variables: p,
+        variableNames: r.variables,
+        params
+      };
+    }
+  }
+  return null;
+}
+
 // src/utils.ts
-var fs = require("fs");
-var path = require("path");
+var fs2 = require("fs");
+var path2 = require("path");
 var { detect } = require("detect-port");
 var BASE_DIR = process.cwd();
-var RUNTIME_DIR = path.join(BASE_DIR, "runtime");
-var SAMPLES_DIR = path.join(BASE_DIR, "samples");
-var TMP_DIR = path.join(BASE_DIR, "tmp");
-function copyDirSync(src, dest) {
-  if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
-  fs.readdirSync(src).forEach((item) => {
-    const srcPath = path.join(src, item);
-    const destPath = path.join(dest, item);
-    if (fs.lstatSync(srcPath).isDirectory()) {
-      copyDirSync(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  });
+var RUNTIME_DIR = path2.join(BASE_DIR, "runtime");
+var SAMPLES_DIR = path2.join(BASE_DIR, "samples");
+var TMP_DIR = path2.join(BASE_DIR, "tmp");
+function copyDockerfileSync(src, dest) {
+  if (!fs2.existsSync(dest)) fs2.mkdirSync(dest, { recursive: true });
+  fs2.copyFileSync(src, path2.join(dest, "Dockerfile"));
 }
 async function createTempEnv(runtime) {
-  if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR);
+  const { variables, dockerfilePath } = matchRoute(runtime);
+  if (!fs2.existsSync(TMP_DIR)) fs2.mkdirSync(TMP_DIR);
   const safeRuntime = runtime.replace(/[^a-zA-Z0-9-_]/g, "-");
   const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
   const tempFolder = `${safeRuntime}-${timestamp}`;
-  const tempPath = path.join(TMP_DIR, tempFolder);
+  const containerName = tempFolder;
+  const tempPath = path2.join(TMP_DIR, tempFolder);
   const port = await findAvailablePort(8080);
-  fs.mkdirSync(tempPath);
-  const runtimeSrc = path.join(RUNTIME_DIR, runtime);
-  copyDirSync(runtimeSrc, tempPath);
-  const composeSrc = path.join(SAMPLES_DIR, "docker-compose.yml");
-  const composeDest = path.join(tempPath, "docker-compose.yml");
-  fs.copyFileSync(composeSrc, composeDest);
+  fs2.mkdirSync(tempPath);
+  copyDockerfileSync(dockerfilePath, tempPath);
+  const composeSrc = path2.join(SAMPLES_DIR, "docker-compose.yml");
+  const composeDest = path2.join(tempPath, "docker-compose.yml");
+  fs2.copyFileSync(composeSrc, composeDest);
+  const env = Object.entries(variables).map(([k, v]) => `${k.toUpperCase()}=${v}`);
+  console.log(env);
   const envContent = [
-    //`GIT_REPO=${repo.ssh_url}`,
-    //`GIT_BRANCH=${branch}`
-    `CODE_PORT=${port}`
+    ...env,
+    `CODE_PORT=${port}`,
+    `CONTAINER_NAME=${containerName}`
   ].join("\n");
-  fs.writeFileSync(path.join(tempPath, ".env"), envContent);
+  fs2.writeFileSync(path2.join(tempPath, ".env"), envContent);
   return { path: tempPath, port };
 }
 async function findAvailablePort(startPort = 8080) {
@@ -83,33 +135,9 @@ async function findAvailablePort(startPort = 8080) {
 // src/main.ts
 var import_child_process2 = require("child_process");
 var import_util = require("util");
+var import_promises = __toESM(require("fs/promises"));
+var import_path = __toESM(require("path"));
 var execAsync = (0, import_util.promisify)(import_child_process2.exec);
-async function promptRepo() {
-  const res = await (0, import_prompts.default)({
-    type: "text",
-    name: "repo",
-    message: "Introduce usuario/repo de GitHub:"
-  });
-  return res.repo;
-}
-async function fetchUserRepos() {
-  if (!octokit) throw new Error("GITHUB_TOKEN no definido");
-  const repos = await octokit.paginate(octokit.repos.listForAuthenticatedUser, { per_page: 100 });
-  return repos.map((repo) => ({
-    title: repo.full_name + (repo.private ? " (privado)" : ""),
-    value: repo.ssh_url
-  }));
-}
-async function promptUserRepo() {
-  const repos = await fetchUserRepos();
-  const res = await (0, import_prompts.default)({
-    type: "autocomplete",
-    name: "repo",
-    message: "Selecciona un repo:",
-    choices: repos
-  });
-  return res.repo;
-}
 async function promptContainer(action = "abrir") {
   const containers = (0, import_child_process.execSync)('docker ps -a --format "{{.Names}}"').toString().split("\n").filter(Boolean);
   if (containers.length === 0) {
@@ -124,16 +152,6 @@ async function promptContainer(action = "abrir") {
   });
   return res.container;
 }
-async function createCommand(repoArg) {
-  const repo = repoArg || await promptRepo();
-  if (!repo) return;
-  (0, import_child_process.execSync)(`npx degit ${repo}`, { stdio: "inherit" });
-}
-async function cloneCommand() {
-  const repo = await promptUserRepo();
-  if (!repo) return;
-  (0, import_child_process.execSync)(`git clone ${repo}`, { stdio: "inherit" });
-}
 async function openCommand(containerArg) {
   const container = containerArg || await promptContainer("abrir");
   if (!container) return;
@@ -143,31 +161,38 @@ async function deleteCommand(containerArg) {
   const container = containerArg || await promptContainer("eliminar");
   if (!container) return;
   (0, import_child_process.execSync)(`docker rm -f ${container}`, { stdio: "inherit" });
+  const tmpPath = import_path.default.join(process.cwd(), "tmp", container);
+  console.log(`Borrando carpeta temporal: ${tmpPath}`);
+  try {
+    await import_promises.default.rm(tmpPath, { recursive: true, force: true });
+    console.log(`Carpeta temporal eliminada: ${tmpPath}`);
+  } catch (err) {
+    console.warn(`No se pudo borrar la carpeta temporal (${tmpPath}):`, err.message);
+  }
 }
 async function runCommand(runtime) {
-  const { path: path2, port } = await createTempEnv(runtime);
-  try {
-    const { stdout, stderr } = await execAsync("docker compose up -d", { cwd: path2 });
-    if (stdout) console.log(stdout);
-    if (stderr) console.error(stderr);
-    console.log(`http://localhost:${port}`);
-  } catch (error) {
-    console.error("Error al ejecutar docker compose:", error);
-    throw error;
-  }
+  const { path: path4, port } = await createTempEnv(runtime);
+  return new Promise((resolve, reject) => {
+    const child = (0, import_child_process.spawn)("docker", ["compose", "up", "-d"], { cwd: path4, stdio: "inherit" });
+    child.on("close", (code) => {
+      if (code === 0) {
+        console.log(`http://localhost:${port}`);
+        resolve();
+      } else {
+        reject(new Error(`docker compose exited with code ${code}`));
+      }
+    });
+    child.on("error", (err) => {
+      console.error("Error al ejecutar docker compose:", err);
+      reject(err);
+    });
+  });
 }
 (0, import_yargs.default)((0, import_helpers.hideBin)(process.argv)).scriptName("coder").command("run [runtime]", "Lanza un runtime", (yargs2) => yargs2.positional("runtime", {
   type: "string",
   describe: "Ejemplo: node:18"
 }), async (argv) => {
   await runCommand(argv.runtime);
-}).command("create [repo]", "Crea entorno desde repo", (yargs2) => yargs2.positional("repo", {
-  type: "string",
-  describe: "Usuario/repo de GitHub"
-}), async (argv) => {
-  await createCommand(argv.repo);
-}).command("clone", "Clona un repo tuyo", {}, async () => {
-  await cloneCommand();
 }).command("open [container]", "Abre un contenedor existente", (yargs2) => yargs2.positional("container", {
   type: "string",
   describe: "Container"
