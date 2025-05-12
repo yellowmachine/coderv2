@@ -60,6 +60,7 @@ async function openCommand(containerArg?: string) {
 
     child.on('close', (code) => {
       if (code === 0) {
+        console.log(`http://localhost:${port}`);
         resolve();
       } else {
         reject(new Error(`docker compose start exited with code ${code}`));
@@ -114,7 +115,7 @@ export async function stopCommand(containerArg?: string) {
   _path = path.join(process.cwd(), 'tmp', _path);
 
   return new Promise<void>((resolve, reject) => {
-    const child = spawn('docker', ['compose', 'down'], { cwd: _path, stdio: 'inherit' });
+    const child = spawn('docker', ['compose', 'stop'], { cwd: _path, stdio: 'inherit' });
 
     child.on('close', (code) => {
       if (code === 0) {
