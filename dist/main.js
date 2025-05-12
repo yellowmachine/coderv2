@@ -6,6 +6,10 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
@@ -22,8 +26,14 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/main.ts
+var main_exports = {};
+__export(main_exports, {
+  stopCommand: () => stopCommand
+});
+module.exports = __toCommonJS(main_exports);
 var import_yargs = __toESM(require("yargs"));
 var import_helpers = require("yargs/helpers");
 var import_prompts = __toESM(require("prompts"));
@@ -155,13 +165,41 @@ async function promptContainer(action = "abrir") {
 async function openCommand(containerArg) {
   const container = containerArg || await promptContainer("abrir");
   if (!container) return;
-  (0, import_child_process.execSync)(`docker start ${container}`, { stdio: "inherit" });
+  const port = await findAvailablePort();
+  const envPath = import_path.default.join(process.cwd(), "tmp", container, ".env");
+  (0, import_child_process.execSync)(`sed -i 's/^PORT=.*/PORT=${port}/' "${envPath}"`);
+  return new Promise((resolve, reject) => {
+    const tmpPath = import_path.default.join(process.cwd(), "tmp", container);
+    const child = (0, import_child_process.spawn)("docker", ["compose", "start"], { cwd: tmpPath, stdio: "inherit" });
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`docker compose start exited with code ${code}`));
+      }
+    });
+    child.on("error", (err) => {
+      reject(err);
+    });
+  });
 }
 async function deleteCommand(containerArg) {
   const container = containerArg || await promptContainer("eliminar");
   if (!container) return;
-  (0, import_child_process.execSync)(`docker rm -f ${container}`, { stdio: "inherit" });
   const tmpPath = import_path.default.join(process.cwd(), "tmp", container);
+  await new Promise((resolve, reject) => {
+    const child = (0, import_child_process.spawn)("docker", ["compose", "down", "-v"], { cwd: tmpPath, stdio: "inherit" });
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`docker compose down exited with code ${code}`));
+      }
+    });
+    child.on("error", (err) => {
+      reject(err);
+    });
+  });
   console.log(`Borrando carpeta temporal: ${tmpPath}`);
   try {
     await import_promises.default.rm(tmpPath, { recursive: true, force: true });
@@ -170,8 +208,38 @@ async function deleteCommand(containerArg) {
     console.warn(`No se pudo borrar la carpeta temporal (${tmpPath}):`, err.message);
   }
 }
+async function stopCommand(containerArg) {
+  const path4 = containerArg || await promptContainer("detener");
+  if (!path4) return;
+  return new Promise((resolve, reject) => {
+    const child = (0, import_child_process.spawn)("docker", ["compose", "down"], { cwd: path4, stdio: "inherit" });
+    child.on("close", (code) => {
+      if (code === 0) {
+        console.log(`container parado`);
+        resolve();
+      } else {
+        reject(new Error(`docker compose exited with code ${code}`));
+      }
+    });
+    child.on("error", (err) => {
+      console.error("Error al ejecutar docker compose:", err);
+      reject(err);
+    });
+  });
+}
+async function resolveAliasOrRuntime(runtime) {
+  try {
+    const data = await import_promises.default.readFile(ALIAS_FILE, "utf8");
+    const aliases = JSON.parse(data);
+    return aliases[runtime] ?? runtime;
+  } catch (e) {
+    if (e.code === "ENOENT") return runtime;
+    throw e;
+  }
+}
 async function runCommand(runtime) {
-  const { path: path4, port } = await createTempEnv(runtime);
+  const resolvedRuntime = await resolveAliasOrRuntime(runtime);
+  const { path: path4, port } = await createTempEnv(resolvedRuntime);
   return new Promise((resolve, reject) => {
     const child = (0, import_child_process.spawn)("docker", ["compose", "up", "-d"], { cwd: path4, stdio: "inherit" });
     child.on("close", (code) => {
@@ -188,11 +256,48 @@ async function runCommand(runtime) {
     });
   });
 }
-(0, import_yargs.default)((0, import_helpers.hideBin)(process.argv)).scriptName("coder").command("run [runtime]", "Lanza un runtime", (yargs2) => yargs2.positional("runtime", {
+var ALIAS_FILE = import_path.default.join(process.cwd(), "alias.json");
+async function addAlias(name, value) {
+  let aliases = {};
+  try {
+    await import_promises.default.access(ALIAS_FILE);
+    const data = await import_promises.default.readFile(ALIAS_FILE, "utf8");
+    aliases = JSON.parse(data);
+  } catch (e) {
+    if (e.code !== "ENOENT") {
+      console.error("Error leyendo alias.json:", e.message);
+      process.exit(1);
+    }
+  }
+  aliases[name] = value;
+  await import_promises.default.writeFile(ALIAS_FILE, JSON.stringify(aliases, null, 2));
+  console.log(`Alias a\xF1adido: ${name} \u2192 ${value}`);
+}
+(0, import_yargs.default)((0, import_helpers.hideBin)(process.argv)).scriptName("coder").command(
+  "alias <name> <value>",
+  "Crea un alias",
+  (yargs2) => {
+    yargs2.positional("name", {
+      describe: "Nombre del alias",
+      type: "string"
+    }).positional("value", {
+      describe: "Valor del alias",
+      type: "string"
+    });
+  },
+  (argv) => {
+    addAlias(argv.name, argv.value);
+  }
+).command("run [runtime]", "Lanza un runtime", (yargs2) => yargs2.positional("runtime", {
   type: "string",
   describe: "Ejemplo: node:18"
 }), async (argv) => {
   await runCommand(argv.runtime);
+}).command("stop [container]", "Para un runtime", (yargs2) => yargs2.positional("container", {
+  type: "string",
+  describe: "Container"
+}), async (argv) => {
+  await runCommand(argv.container);
 }).command("open [container]", "Abre un contenedor existente", (yargs2) => yargs2.positional("container", {
   type: "string",
   describe: "Container"
@@ -204,4 +309,8 @@ async function runCommand(runtime) {
 }), async (argv) => {
   await deleteCommand(argv.container);
 }).demandCommand(1, 1, "Debes especificar un comando (create, clone, open, delete)").help().argv;
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  stopCommand
+});
 //# sourceMappingURL=main.js.map

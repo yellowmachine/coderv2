@@ -28,15 +28,6 @@ async function promptCommand() {
   return res.command;
 }
 
-async function promptRepo() {
-  const res = await prompts({
-    type: 'text',
-    name: 'repo',
-    message: 'Introduce usuario/repo de GitHub:'
-  });
-  return res.repo;
-}
-
 async function promptContainer(action = 'abrir') {
   const containers = execSync('docker ps -a --format "{{.Names}}"').toString().split('\n').filter(Boolean);
   if (containers.length === 0) {
@@ -57,18 +48,56 @@ async function promptContainer(action = 'abrir') {
 async function openCommand(containerArg?: string) {
   const container = containerArg || await promptContainer('abrir');
   if (!container) return;
-  execSync(`docker start ${container}`, { stdio: 'inherit' });
+  
+  const port = await findAvailablePort();
+  const envPath = path.join(process.cwd(), 'tmp', container, '.env');
+
+  execSync(`sed -i 's/^PORT=.*/PORT=${port}/' "${envPath}"`);
+  
+  return new Promise<void>((resolve, reject) => {
+    const tmpPath = path.join(process.cwd(), 'tmp', container);
+    const child = spawn('docker', ['compose', 'start'], { cwd: tmpPath, stdio: 'inherit' });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`docker compose start exited with code ${code}`));
+      }
+    });
+
+    child.on('error', (err) => {
+      reject(err);
+    });
+  });
+
 }
 
 async function deleteCommand(containerArg?: string) {
   const container = containerArg || await promptContainer('eliminar');
   if (!container) return;
-  execSync(`docker rm -f ${container}`, { stdio: 'inherit' });
 
   const tmpPath = path.join(process.cwd(), 'tmp', container);
 
-  console.log(`Borrando carpeta temporal: ${tmpPath}`);
+  // Ejecutar docker compose down -v en la carpeta del entorno
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn('docker', ['compose', 'down', '-v'], { cwd: tmpPath, stdio: 'inherit' });
 
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`docker compose down exited with code ${code}`));
+      }
+    });
+
+    child.on('error', (err) => {
+      reject(err);
+    });
+  });
+
+  // Eliminar la carpeta temporal
+  console.log(`Borrando carpeta temporal: ${tmpPath}`);
   try {
     await fs.rm(tmpPath, { recursive: true, force: true });
     console.log(`Carpeta temporal eliminada: ${tmpPath}`);
@@ -77,8 +106,46 @@ async function deleteCommand(containerArg?: string) {
   }
 }
 
+
+export async function stopCommand(containerArg?: string) {
+  const path = containerArg || await promptContainer('detener');
+  if (!path) return;
+
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn('docker', ['compose', 'down'], { cwd: path, stdio: 'inherit' });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        console.log(`container parado`);
+        resolve();
+      } else {
+        reject(new Error(`docker compose exited with code ${code}`));
+      }
+    });
+
+    child.on('error', (err) => {
+      console.error('Error al ejecutar docker compose:', err);
+      reject(err);
+    });
+  });
+}
+
+async function resolveAliasOrRuntime(runtime: string): Promise<string> {
+  try {
+    const data = await fs.readFile(ALIAS_FILE, 'utf8');
+    const aliases = JSON.parse(data) as Record<string, string>;
+    // Si existe el alias, lo sustituye; si no, devuelve el runtime original
+    return aliases[runtime] ?? runtime;
+  } catch (e: any) {
+    // Si el archivo no existe, simplemente devuelve el runtime original
+    if (e.code === 'ENOENT') return runtime;
+    throw e; // Otros errores sí deben reportarse
+  }
+}
+
 async function runCommand(runtime: string) {
-  const { path, port } = await createTempEnv(runtime);
+  const resolvedRuntime = await resolveAliasOrRuntime(runtime);
+  const { path, port } = await createTempEnv(resolvedRuntime);
 
   return new Promise<void>((resolve, reject) => {
     const child = spawn('docker', ['compose', 'up', '-d'], { cwd: path, stdio: 'inherit' });
@@ -99,16 +166,64 @@ async function runCommand(runtime: string) {
   });
 }
 
+const ALIAS_FILE = path.join(process.cwd(), 'alias.json');
+
+async function addAlias(name: string, value: string) {
+  let aliases: Record<string, string> = {};
+
+  try {
+    await fs.access(ALIAS_FILE);
+    // Solo si existe, intenta leer y parsear
+    const data = await fs.readFile(ALIAS_FILE, 'utf8');
+    aliases = JSON.parse(data);
+  } catch (e: any) {
+    if (e.code !== 'ENOENT') {
+      // Error distinto a "no existe el archivo"
+      console.error('Error leyendo alias.json:', e.message);
+      process.exit(1);
+    }
+  }
+
+  aliases[name] = value;
+  await fs.writeFile(ALIAS_FILE, JSON.stringify(aliases, null, 2));
+  console.log(`Alias añadido: ${name} → ${value}`);
+}
+
 // ===== YARGS INTEGRACIÓN =====
 
 yargs(hideBin(process.argv))
   .scriptName('coder')
+  .command(
+    'alias <name> <value>',
+    'Crea un alias',
+    (yargs) => {
+      yargs
+        .positional('name', {
+          describe: 'Nombre del alias',
+          type: 'string',
+        })
+        .positional('value', {
+          describe: 'Valor del alias',
+          type: 'string',
+        });
+    },
+    (argv) => {
+      addAlias(argv.name, argv.value);
+    }
+  )
   .command('run [runtime]', 'Lanza un runtime', (yargs) =>
     yargs.positional('runtime', {
       type: 'string',
       describe: 'Ejemplo: node:18',
     }), async argv => {
     await runCommand(argv.runtime);
+  })
+  .command('stop [container]', 'Para un runtime', (yargs) =>
+    yargs.positional('container', {
+      type: 'string',
+      describe: 'Container',
+    }), async argv => {
+    await runCommand(argv.container);
   })
   .command('open [container]', 'Abre un contenedor existente', (yargs) =>
     yargs.positional('container', {
