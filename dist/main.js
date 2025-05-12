@@ -101,7 +101,6 @@ var fs2 = require("fs");
 var path2 = require("path");
 var { detect } = require("detect-port");
 var BASE_DIR = process.env.CODER_HOME;
-var RUNTIME_DIR = path2.join(BASE_DIR, "runtime");
 var SAMPLES_DIR = path2.join(BASE_DIR, "samples");
 var TMP_DIR = path2.join(BASE_DIR, "tmp");
 function copyDockerfileSync(src, dest) {
@@ -109,7 +108,9 @@ function copyDockerfileSync(src, dest) {
   fs2.copyFileSync(src, path2.join(dest, "Dockerfile"));
 }
 async function createTempEnv(runtime) {
-  const { variables, dockerfilePath } = matchRoute(runtime);
+  const match = matchRoute(runtime);
+  if (!match) return null;
+  const { variables, dockerfilePath } = match;
   if (!fs2.existsSync(TMP_DIR)) fs2.mkdirSync(TMP_DIR);
   const safeRuntime = runtime.replace(/[^a-zA-Z0-9-_]/g, "-");
   const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
@@ -267,7 +268,7 @@ async function deleteCommand(containerArg) {
     await import_promises2.default.rm(tmpPath, { recursive: true, force: true });
     console.log(`Carpeta temporal eliminada: ${tmpPath}`);
   } catch (err) {
-    console.warn(`No se pudo borrar la carpeta temporal (${tmpPath}):`, err.message);
+    console.warn(`No se pudo borrar la carpeta temporal (${tmpPath}):`, JSON.stringify(err));
   }
 }
 async function stopCommand(containerArg) {
@@ -301,8 +302,12 @@ async function resolveAliasOrRuntime(runtime) {
   }
 }
 async function runCommand(runtime) {
+  if (!runtime)
+    return;
   const resolvedRuntime = await resolveAliasOrRuntime(runtime);
-  const { path: path5, port } = await createTempEnv(resolvedRuntime);
+  const tempEnv = await createTempEnv(resolvedRuntime);
+  if (!tempEnv) return;
+  const { path: path5, port } = tempEnv;
   return new Promise((resolve, reject) => {
     const child = (0, import_child_process.spawn)("docker", ["compose", "up", "-d"], { cwd: path5, stdio: "inherit" });
     child.on("close", (code) => {
@@ -356,8 +361,9 @@ async function addAlias(name, value) {
       type: "string"
     });
   },
-  (argv) => {
-    addAlias(argv.name, argv.value);
+  async (argv) => {
+    const arg = argv;
+    await addAlias(arg.name, arg.value);
   }
 ).command("run [runtime]", "Lanza un runtime", (yargs2) => yargs2.positional("runtime", {
   type: "string",

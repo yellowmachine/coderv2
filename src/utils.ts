@@ -7,35 +7,22 @@ const {detect} = require('detect-port');
 // === Configuración de rutas ===
 const BASE_DIR = process.env.CODER_HOME!;
 
-const RUNTIME_DIR = path.join(BASE_DIR, 'runtime');
+//const RUNTIME_DIR = path.join(BASE_DIR, 'runtime');
 const SAMPLES_DIR = path.join(BASE_DIR, 'samples');
 const TMP_DIR = path.join(BASE_DIR, 'tmp');
 
-function getRuntimeOptions() {
-    return fs.readdirSync(RUNTIME_DIR, { withFileTypes: true })
-      .filter(dirent => dirent.isDirectory())
-      .map(dirent => dirent.name);
-  }
 
 function copyDockerfileSync(src: string, dest: string) {
     if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
     fs.copyFileSync(src, path.join(dest, 'Dockerfile'));
-    /*fs.readdirSync(src).forEach( (item: string ) => {
-      const srcPath = path.join(src, item);
-      const destPath = path.join(dest, item);
-      //if (fs.lstatSync(srcPath).isDirectory()) {
-      //  copyDirSync(srcPath, destPath);
-      //} else {
-      //fs.copyFileSync(srcPath, destPath);
-      //}
-    });
-    */
-  }
+}
   
   // Crea la carpeta temporal y copia los archivos necesarios
-  export async function createTempEnv(runtime: string) {
-    const { variables, dockerfilePath } = matchRoute(runtime);
-    
+export async function createTempEnv(runtime: string) {
+    const match = matchRoute(runtime);
+    if(!match) return null;
+    const { variables, dockerfilePath } = match;  
+
     if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR);
   
     const safeRuntime = runtime.replace(/[^a-zA-Z0-9-_]/g, '-');

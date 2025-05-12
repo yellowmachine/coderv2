@@ -71,26 +71,5 @@ export function matchRoute(input: string) {
     return null;
 }
 
-//const input = 'node/18/alpine?ssh=true&package=yarn';
-//const input = 'my/node:18';
-
-//const [route, queryString] = input.split('?');
-//const params = new URLSearchParams(queryString);
-
-//console.log('Ruta:', route); // node/18/alpine
-//console.log('ssh:', params.get('ssh')); // 'true'
-//console.log('package:', params.get('package')); // 'yarn'
-
-
-// Ejemplo:
-//const input = 'node/18/alpine';
-//const match = matchRoute(input);
-//if (match) {
-//    console.log(match)
-  //console.log('Dockerfile:', match.dockerfilePath);
-  //console.log('Variables:', match.params);
-//} else {
-//  console.log('No match');
-//}
 
 

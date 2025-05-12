@@ -104,7 +104,7 @@ async function deleteCommand(containerArg?: string) {
     await fs.rm(tmpPath, { recursive: true, force: true });
     console.log(`Carpeta temporal eliminada: ${tmpPath}`);
   } catch (err) {
-    console.warn(`No se pudo borrar la carpeta temporal (${tmpPath}):`, err.message);
+    console.warn(`No se pudo borrar la carpeta temporal (${tmpPath}):`, JSON.stringify(err));
   }
 }
 
@@ -147,9 +147,14 @@ async function resolveAliasOrRuntime(runtime: string): Promise<string> {
   }
 }
 
-async function runCommand(runtime: string) {
+async function runCommand(runtime?: string) {
+  if(!runtime) 
+    return;
   const resolvedRuntime = await resolveAliasOrRuntime(runtime);
-  const { path, port } = await createTempEnv(resolvedRuntime);
+  
+  const tempEnv = await createTempEnv(resolvedRuntime);
+  if(!tempEnv) return;
+  const { path, port } = tempEnv;
 
   return new Promise<void>((resolve, reject) => {
     const child = spawn('docker', ['compose', 'up', '-d'], { cwd: path, stdio: 'inherit' });
@@ -219,8 +224,9 @@ yargs(hideBin(process.argv))
           type: 'string',
         });
     },
-    (argv) => {
-      addAlias(argv.name, argv.value);
+    async (argv) => {
+      const arg = argv as unknown as {name: string, value: string}
+      await addAlias(arg.name, arg.value);
     }
   )
   .command('run [runtime]', 'Lanza un runtime', (yargs) =>
