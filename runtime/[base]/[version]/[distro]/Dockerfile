@@ -1,7 +1,8 @@
 ARG BASE
 ARG VERSION
+ARG DISTRO
 
-FROM ${BASE}:${VERSION}
+FROM ${BASE}:${VERSION}-${DISTRO}
 
 RUN apt-get update && apt-get install -y \
     curl \
